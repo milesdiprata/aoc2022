@@ -9,6 +9,9 @@ struct Item(char);
 #[derive(Debug)]
 struct Rucksack(Vec<Item>);
 
+#[derive(Debug)]
+struct Group<'a>([&'a Rucksack; 3]);
+
 impl FromStr for Rucksack {
     type Err = Error;
 
@@ -47,13 +50,29 @@ impl Rucksack {
             .map(|compartment| compartment.collect::<HashSet<_>>())
             .collect::<Vec<_>>();
 
-        let (first, second) = (unique_items.first()?, unique_items.last()?);
-
-        first
+        unique_items[0]
             .iter()
-            .flat_map(|&i| second.iter().map(move |&j| (i, j)))
+            .flat_map(|&i| unique_items[1].iter().map(move |&j| (i, j)))
             .find(|(i, j)| i == j)
             .map(|(item, _)| item)
+            .map(Item)
+    }
+}
+
+impl Group<'_> {
+    fn find_badge(&self) -> Option<Item> {
+        let unique_items = self
+            .0
+            .map(|rucksack| rucksack.0.iter())
+            .map(|items| items.map(|item| item.0))
+            .map(|items| items.collect::<HashSet<_>>());
+
+        unique_items[0]
+            .iter()
+            .flat_map(|&i| unique_items[1].iter().map(move |&j| (i, j)))
+            .flat_map(|(i, j)| unique_items[2].iter().map(move |&k| (i, j, k)))
+            .find(|(i, j, k)| i == j && i == k)
+            .map(|(item, _, _)| item)
             .map(Item)
     }
 }
@@ -82,7 +101,13 @@ fn part_one(rucksacks: &[Rucksack]) -> usize {
 }
 
 fn part_two(rucksacks: &[Rucksack]) -> usize {
-    todo!()
+    rucksacks
+        .chunks(3)
+        .map(|group| [&group[0], &group[1], &group[2]])
+        .map(Group)
+        .flat_map(|group| group.find_badge())
+        .flat_map(|badge| badge.as_priority())
+        .sum()
 }
 
 fn main() -> Result<()> {
