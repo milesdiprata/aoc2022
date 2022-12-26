@@ -73,6 +73,16 @@ impl ElfPair {
                 .as_range()
                 .all(|assignment| self.first.as_range().contains(&assignment))
     }
+
+    fn any_overlap(&self) -> bool {
+        self.first
+            .as_range()
+            .any(|assignment| self.second.as_range().contains(&assignment))
+            || self
+                .second
+                .as_range()
+                .any(|assignment| self.first.as_range().contains(&assignment))
+    }
 }
 
 fn read_elf_pairs() -> Result<Vec<ElfPair>> {
@@ -93,12 +103,12 @@ fn read_elf_pairs() -> Result<Vec<ElfPair>> {
 fn part_one(pairs: &[ElfPair]) -> usize {
     pairs
         .iter()
-        .filter(|pair| pair.any_complete_overlap())
+        .filter(|&pair| pair.any_complete_overlap())
         .count()
 }
 
 fn part_two(pairs: &[ElfPair]) -> usize {
-    todo!()
+    pairs.iter().filter(|&pair| pair.any_overlap()).count()
 }
 
 fn main() -> Result<()> {
