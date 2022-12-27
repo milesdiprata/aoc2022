@@ -1,20 +1,61 @@
 use anyhow::{anyhow, Result};
 use std::io::{self, BufRead};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Crate(char);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Stack(Vec<Crate>);
 
 #[derive(Debug)]
-struct Crane;
+struct CrateMover9000;
+
+#[derive(Debug)]
+struct CrateMover9001;
 
 #[derive(Debug)]
 struct Rearrangement {
     stack_len: usize,
     source: usize,
     destination: usize,
+}
+
+impl CrateMover9000 {
+    fn rearrange(stacks: &mut [Stack], rearrangement: &Rearrangement) -> Option<()> {
+        (0..rearrangement.stack_len)
+            .map(|_| {
+                stacks
+                    .get_mut(rearrangement.source - 1)
+                    .map(|stack| stack.0.pop())
+            })
+            .collect::<Option<Option<Vec<_>>>>()??
+            .into_iter()
+            .map(|item| {
+                stacks
+                    .get_mut(rearrangement.destination - 1)
+                    .map(|stack| stack.0.push(item))
+            })
+            .collect()
+    }
+}
+
+impl CrateMover9001 {
+    fn rearrange(stacks: &mut [Stack], rearrangement: &Rearrangement) -> Option<()> {
+        let source_len = stacks.get(rearrangement.source - 1)?.0.len();
+
+        stacks
+            .get_mut(rearrangement.source - 1)?
+            .0
+            .drain(source_len - rearrangement.stack_len..)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|item| {
+                stacks
+                    .get_mut(rearrangement.destination - 1)
+                    .map(|stack| stack.0.push(item))
+            })
+            .collect()
+    }
 }
 
 fn read_stacks() -> Result<Vec<Stack>> {
@@ -93,40 +134,30 @@ fn read_rearrangements() -> Result<Vec<Rearrangement>> {
     Ok(rearrangements)
 }
 
-impl Crane {
-    fn top_crates(stacks: &[Stack]) -> Option<String> {
-        stacks
-            .iter()
-            .map(|stack| stack.0.last())
-            .map(|item| item.map(|item| item.0))
-            .collect()
-    }
-
-    fn rearrange(stacks: &mut [Stack], rearrangement: &Rearrangement) -> Option<()> {
-        (0..rearrangement.stack_len)
-            .map(|_| {
-                stacks
-                    .get_mut(rearrangement.source - 1)
-                    .map(|stack| stack.0.pop())
-            })
-            .collect::<Option<Option<Vec<_>>>>()??
-            .into_iter()
-            .map(|item| {
-                stacks
-                    .get_mut(rearrangement.destination - 1)
-                    .map(|stack| stack.0.push(item))
-            })
-            .collect()
-    }
+fn top_crates(stacks: &[Stack]) -> Option<String> {
+    stacks
+        .iter()
+        .map(|stack| stack.0.last())
+        .map(|item| item.map(|item| item.0))
+        .collect()
 }
 
 fn part_one(stacks: &mut [Stack], rearrangements: &[Rearrangement]) -> Option<String> {
     rearrangements
         .iter()
-        .map(|rearrangement| Crane::rearrange(stacks, rearrangement))
+        .map(|rearrangement| CrateMover9000::rearrange(stacks, rearrangement))
         .collect::<Option<_>>()?;
 
-    Crane::top_crates(stacks)
+    top_crates(stacks)
+}
+
+fn part_two(stacks: &mut [Stack], rearrangements: &[Rearrangement]) -> Option<String> {
+    rearrangements
+        .iter()
+        .map(|rearrangement| CrateMover9001::rearrange(stacks, rearrangement))
+        .collect::<Option<_>>()?;
+
+    top_crates(stacks)
 }
 
 fn main() -> Result<()> {
@@ -135,7 +166,13 @@ fn main() -> Result<()> {
 
     println!(
         "Part one: {}",
-        part_one(stacks.as_mut_slice(), rearrangements.as_slice())
+        part_one(stacks.clone().as_mut_slice(), rearrangements.as_slice())
+            .ok_or_else(|| anyhow!("No stacks given!"))?
+    );
+
+    println!(
+        "Part two: {}",
+        part_two(stacks.as_mut_slice(), rearrangements.as_slice())
             .ok_or_else(|| anyhow!("No stacks given!"))?
     );
 
