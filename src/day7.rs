@@ -1,9 +1,11 @@
-use anyhow::{anyhow, Error, Result};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::io::{self, BufRead};
 use std::rc::{Rc, Weak};
 use std::str::FromStr;
+
+use anyhow::{anyhow, Error, Result};
 
 #[derive(Debug)]
 enum Command {
@@ -196,17 +198,47 @@ fn read_files() -> Result<File> {
 }
 
 fn part_one(root: &File) -> Result<usize> {
+    const MAX_DIR_SIZE: usize = 100000;
+
     root.to_dirs(false)
         .map(|dirs| dirs.into_iter())
         .map(|dirs| dirs.map(|dir| dir.to_size()))
-        .map(|sizes| sizes.filter(|&size| size <= 100000))
+        .map(|sizes| sizes.filter(|&size| size <= MAX_DIR_SIZE))
         .map(|sizes| sizes.sum())
+}
+
+fn part_two(root: &File) -> Result<Option<usize>> {
+    const TOTAL_DISK_SIZE: usize = 70000000;
+    const UPDATE_FREE_DISK_SIZE: usize = 30000000;
+
+    let unused_disk_size = TOTAL_DISK_SIZE - root.to_size();
+
+    let mut used_size = None;
+    let mut used_sizes = root
+        .to_dirs(false)
+        .map(|dirs| dirs.into_iter())
+        .map(|dirs| dirs.map(|dir| dir.to_size()))
+        .map(|sizes| sizes.map(Reverse))
+        .map(|sizes| sizes.collect::<BinaryHeap<_>>())?;
+
+    while let Some(size) = used_sizes.pop() {
+        if unused_disk_size + size.0 >= UPDATE_FREE_DISK_SIZE {
+            used_size = Some(size.0);
+            break;
+        }
+    }
+
+    Ok(used_size)
 }
 
 fn main() -> Result<()> {
     let files = read_files()?;
 
     println!("Part one: {}", part_one(&files)?);
+    println!(
+        "Part two: {}",
+        part_two(&files).map(|size| size.ok_or_else(|| anyhow!("No directory large enough!")))??
+    );
 
     Ok(())
 }
