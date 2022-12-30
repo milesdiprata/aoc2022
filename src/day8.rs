@@ -26,18 +26,18 @@ mod day8 {
     #[derive(Clone, Copy, Debug)]
     enum Direction {
         Up,
-        Down,
         Left,
         Right,
+        Down,
     }
 
     impl Direction {
         fn iter() -> Iter<'static, Self> {
             const DIRECTIONS: [Direction; 4] = [
                 Direction::Up,
-                Direction::Down,
                 Direction::Left,
                 Direction::Right,
+                Direction::Down,
             ];
 
             DIRECTIONS.iter()
@@ -46,9 +46,9 @@ mod day8 {
         fn as_offset(&self) -> (isize, isize) {
             match self {
                 Direction::Up => (-1, 0),
-                Direction::Down => (1, 0),
                 Direction::Left => (0, -1),
                 Direction::Right => (0, 1),
+                Direction::Down => (1, 0),
             }
         }
     }
@@ -122,6 +122,41 @@ mod day8 {
             Some(is_visible)
         }
 
+        pub fn get_scenic_score(&self, (i, j): (usize, usize)) -> Option<usize> {
+            if [i, j]
+                .iter()
+                .any(|&coord| coord == 0 || coord == self.len - 1)
+            {
+                return Some(0);
+            }
+
+            let height = self.trees.get(&(i, j)).map(|tree| tree.height)?;
+            let scenic_score = Direction::iter()
+                .map(|&dir| dir.as_offset())
+                .map(|(i_dir, j_dir)| {
+                    (1..self.len)
+                        .map(|offset| offset as isize)
+                        .map(move |offset| (offset * i_dir, offset * j_dir))
+                        .map(|(i_offset, j_offset)| (i as isize + i_offset, j as isize + j_offset))
+                        .map(|(i, j)| (i as usize, j as usize))
+                        .flat_map(|coords| self.trees.get(&coords))
+                        .collect::<Vec<_>>()
+                })
+                .map(|trees| {
+                    trees
+                        .iter()
+                        .take_while(|&&tree| tree.height < height)
+                        .count()
+                        + match trees.iter().find(|&&tree| tree.height >= height) {
+                            Some(_) => 1,
+                            None => 0,
+                        }
+                })
+                .product();
+
+            Some(scenic_score)
+        }
+
         fn from_trees(trees: HashMap<(usize, usize), Tree>) -> Result<Self> {
             let max_coord = trees
                 .keys()
@@ -148,10 +183,19 @@ fn part_one(grid: &Grid) -> usize {
         .count()
 }
 
+fn part_two(grid: &Grid) -> usize {
+    (0..grid.len())
+        .flat_map(|i| (0..grid.len()).map(move |j| (i, j)))
+        .flat_map(|coords| grid.get_scenic_score(coords))
+        .max()
+        .unwrap_or_default()
+}
+
 fn main() -> Result<()> {
     let grid = Grid::from_stdin(io::stdin())?;
 
     println!("Part one: {}", part_one(&grid));
+    println!("Part two: {}", part_two(&grid));
 
     Ok(())
 }
