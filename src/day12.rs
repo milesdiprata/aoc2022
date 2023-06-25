@@ -13,7 +13,7 @@ mod day12 {
 
     pub struct HeatMap {
         grid: Vec<Vec<char>>,
-        start: (usize, usize),
+        len: usize,
         end: (usize, usize),
     }
 
@@ -45,20 +45,8 @@ mod day12 {
                 .map(|row| row.len())
                 .ok_or_else(|| anyhow!("Empty grid!"))?;
 
-            let coords = (0..len).flat_map(|i| (0..len).map(move |j| (i, j)));
-
-            let start = coords
-                .clone()
-                .find(|&(i, j)| {
-                    grid.get(i)
-                        .and_then(|row| row.get(j))
-                        .map(|&elevation| elevation == 'S')
-                        .unwrap_or_default()
-                })
-                .ok_or_else(|| anyhow!("Missing start position!"))?;
-
-            let end = coords
-                .into_iter()
+            let end = (0..len)
+                .flat_map(|i| (0..len).map(move |j| (i, j)))
                 .find(|&(i, j)| {
                     grid.get(i)
                         .and_then(|row| row.get(j))
@@ -67,10 +55,18 @@ mod day12 {
                 })
                 .ok_or_else(|| anyhow!("Missing end position!"))?;
 
-            Ok(Self { grid, start, end })
+            Ok(Self { grid, len, end })
         }
 
-        pub fn find_path(&self) -> Option<VecDeque<(usize, usize)>> {
+        pub fn len(&self) -> usize {
+            self.len
+        }
+
+        pub fn get(&self, (i, j): (usize, usize)) -> Option<char> {
+            self.grid.get(i).and_then(|row| row.get(j)).copied()
+        }
+
+        pub fn find_path(&self, start: (usize, usize)) -> Option<VecDeque<(usize, usize)>> {
             // TODO(milesdiprata): Use priority-queue
             let mut open_set = HashSet::new();
             let mut came_from = HashMap::new();
@@ -78,10 +74,10 @@ mod day12 {
             let mut g_scores = HashMap::new();
             let mut f_scores = HashMap::new();
 
-            open_set.insert(self.start);
+            open_set.insert(start);
 
-            g_scores.insert(self.start, 0);
-            f_scores.insert(self.start, self.h_score(self.start));
+            g_scores.insert(start, 0);
+            f_scores.insert(start, self.h_score(start));
 
             while !open_set.is_empty() {
                 let current = open_set
@@ -119,16 +115,12 @@ mod day12 {
             None
         }
 
-        fn get(&self, (i, j): (usize, usize)) -> Option<char> {
-            self.grid
-                .get(i)
-                .and_then(|row| row.get(j))
-                .copied()
-                .map(|elevation| match elevation {
-                    'S' => 'a',
-                    'E' => 'z',
-                    elevation => elevation,
-                })
+        fn get_elevation(&self, coord: (usize, usize)) -> Option<char> {
+            self.get(coord).map(|elevation| match elevation {
+                'S' => 'a',
+                'E' => 'z',
+                elevation => elevation,
+            })
         }
 
         fn neighbors(&self, (i, j): (usize, usize)) -> Vec<(usize, usize)> {
@@ -144,11 +136,11 @@ mod day12 {
             .map(|(i, j)| (i as usize, j as usize))
             .filter(|&neighbor| self.get(neighbor).is_some())
             .filter(|&neighbor| {
-                self.get(neighbor)
+                self.get_elevation(neighbor)
                     .map(|elevation| elevation as i8)
                     .unwrap_or_default()
                     - self
-                        .get((i, j))
+                        .get_elevation((i, j))
                         .map(|elevation| elevation as i8)
                         .unwrap_or_default()
                     <= 1
@@ -161,7 +153,7 @@ mod day12 {
         }
 
         fn euclidean_distance(p: (usize, usize), q: (usize, usize)) -> usize {
-            ((q.0 as f64 - p.0 as f64).powi(2) + (q.1 as f64 - p.0 as f64).powi(2))
+            ((q.0 as f64 - p.0 as f64).powi(2) + (q.1 as f64 - p.1 as f64).powi(2))
                 .sqrt()
                 .round() as usize
         }
@@ -183,17 +175,41 @@ mod day12 {
 }
 
 fn part_one(heat_map: &HeatMap) -> usize {
-    heat_map
-        .find_path()
+    (0..heat_map.len())
+        .flat_map(|i| (0..heat_map.len()).map(move |j| (i, j)))
+        .find(|&(i, j)| {
+            heat_map
+                .get((i, j))
+                .map(|elevation| elevation == 'S')
+                .unwrap_or_default()
+        })
+        .and_then(|start| heat_map.find_path(start))
         .map(|path| path.len())
+        .map(|path_len| path_len - 1)
         .unwrap_or_default()
-        - 1
+}
+
+fn part_two(heat_map: &HeatMap) -> usize {
+    (0..heat_map.len())
+        .flat_map(|i| (0..heat_map.len()).map(move |j| (i, j)))
+        .filter(|&(i, j)| {
+            heat_map
+                .get((i, j))
+                .map(|elevation| elevation == 'S' || elevation == 'a')
+                .unwrap_or_default()
+        })
+        .flat_map(|start| heat_map.find_path(start))
+        .map(|path| path.len())
+        .map(|path_len| path_len - 1)
+        .min()
+        .unwrap_or_default()
 }
 
 fn main() -> Result<()> {
     let heat_map = HeatMap::from_stdin(io::stdin())?;
 
     println!("Part one: {}", part_one(&heat_map));
+    println!("Part two: {}", part_two(&heat_map));
 
     Ok(())
 }
