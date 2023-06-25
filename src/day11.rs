@@ -6,6 +6,8 @@ use anyhow::Result;
 
 use day11::Monkey;
 
+const ACTIVE_MONKEY_LEN: u8 = 2;
+
 mod day11 {
     use std::{
         io::{BufRead, Stdin},
@@ -14,22 +16,22 @@ mod day11 {
 
     use anyhow::{anyhow, Error, Result};
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     enum Operation {
         Add((Option<usize>, Option<usize>)),
         Multiply((Option<usize>, Option<usize>)),
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct Test {
         condition: usize,
         test_pass_result: usize,
         test_fail_result: usize,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct Monkey {
-        pub items: Vec<usize>,
+        items: Vec<usize>,
         operation: Operation,
         test: Test,
     }
@@ -157,9 +159,17 @@ mod day11 {
                 .collect()
         }
 
-        pub fn take_turn(&mut self) -> Vec<(usize, usize)> {
-            self.evaluate();
-            self.inspect();
+        pub fn test_quotient(&self) -> usize {
+            self.test.condition
+        }
+
+        pub fn take_turn(
+            &mut self,
+            greatest_common_divisor: Option<usize>,
+            inspect_quotient: Option<usize>,
+        ) -> Vec<(usize, usize)> {
+            self.evaluate(greatest_common_divisor);
+            self.inspect(inspect_quotient);
             self.throw()
         }
 
@@ -211,14 +221,20 @@ mod day11 {
             })
         }
 
-        fn evaluate(&mut self) {
-            self.items
-                .iter_mut()
-                .for_each(|item| *item = self.operation.evaluate(*item));
+        fn evaluate(&mut self, greatest_common_divisor: Option<usize>) {
+            self.items.iter_mut().for_each(|item| {
+                *item = self.operation.evaluate(
+                    greatest_common_divisor
+                        .map(|divisor| *item % divisor)
+                        .unwrap_or(*item),
+                )
+            });
         }
 
-        fn inspect(&mut self) {
-            self.items.iter_mut().for_each(|item| *item /= 3);
+        fn inspect(&mut self, inspect_quotient: Option<usize>) {
+            inspect_quotient
+                .map(|quotient| self.items.iter_mut().for_each(|item| *item /= quotient))
+                .unwrap_or_default();
         }
 
         fn throw(&mut self) -> Vec<(usize, usize)> {
@@ -236,17 +252,17 @@ mod day11 {
     }
 }
 
-fn part_one(monkeys: &[RefCell<Monkey>]) -> usize {
+fn part_one(monkeys: Vec<RefCell<Monkey>>) -> usize {
     const ROUND_LEN: u8 = 20;
-    const ACTIVE_MONKEY_LEN: u8 = 2;
+    const INSPECT_QUOTIENT: Option<u8> = Some(3);
 
     let mut inspection_lens = (0..monkeys.len()).map(|_| 0usize).collect::<Vec<_>>();
 
-    (0..ROUND_LEN).for_each(|i| {
+    (0..ROUND_LEN).for_each(|_| {
         monkeys.iter().enumerate().for_each(|(sender, monkey)| {
             monkey
                 .borrow_mut()
-                .take_turn()
+                .take_turn(None, INSPECT_QUOTIENT.map(|quotient| quotient as usize))
                 .into_iter()
                 .for_each(|(recipient, thrown_item)| {
                     *inspection_lens
@@ -260,16 +276,51 @@ fn part_one(monkeys: &[RefCell<Monkey>]) -> usize {
                         .catch(thrown_item);
                 })
         });
+    });
 
-        println!("after round {}", i + 1);
-        println!(
-            "{:?}",
-            monkeys
-                .iter()
-                .map(|monkey| monkey.borrow().items.clone())
-                .collect::<Vec<_>>()
-        );
-        println!();
+    inspection_lens
+        .into_iter()
+        .collect::<BinaryHeap<_>>()
+        .into_iter()
+        .take(ACTIVE_MONKEY_LEN as usize)
+        .product()
+}
+
+fn part_two(monkeys: Vec<RefCell<Monkey>>) -> usize {
+    const ROUND_LEN: usize = 10_000;
+    const INSPECT_QUOTIENT: Option<u8> = None;
+
+    let greatest_common_divisor = Some(
+        monkeys
+            .iter()
+            .map(RefCell::borrow)
+            .map(|monkey| monkey.test_quotient())
+            .product(),
+    );
+
+    let mut inspection_lens = (0..monkeys.len()).map(|_| 0usize).collect::<Vec<_>>();
+
+    (0..ROUND_LEN).for_each(|_| {
+        monkeys.iter().enumerate().for_each(|(sender, monkey)| {
+            monkey
+                .borrow_mut()
+                .take_turn(
+                    greatest_common_divisor,
+                    INSPECT_QUOTIENT.map(|quotient| quotient as usize),
+                )
+                .into_iter()
+                .for_each(|(recipient, thrown_item)| {
+                    *inspection_lens
+                        .get_mut(sender)
+                        .unwrap_or_else(|| unreachable!()) += 1;
+
+                    monkeys
+                        .get(recipient)
+                        .unwrap_or_else(|| unreachable!())
+                        .borrow_mut()
+                        .catch(thrown_item);
+                })
+        });
     });
 
     inspection_lens
@@ -281,12 +332,16 @@ fn part_one(monkeys: &[RefCell<Monkey>]) -> usize {
 }
 
 fn main() -> Result<()> {
-    let monkeys = Monkey::from_stdin(io::stdin())?
-        .into_iter()
-        .map(RefCell::new)
-        .collect::<Vec<_>>();
+    let monkeys = Monkey::from_stdin(io::stdin())?;
 
-    println!("Part one: {}", part_one(monkeys.as_slice()));
+    println!(
+        "Part one: {}",
+        part_one(monkeys.iter().cloned().map(RefCell::new).collect())
+    );
+    println!(
+        "Part two: {}",
+        part_two(monkeys.iter().cloned().map(RefCell::new).collect())
+    );
 
     Ok(())
 }
