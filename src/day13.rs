@@ -6,6 +6,7 @@ use day13::DistressSignal;
 
 mod day13 {
     use std::{
+        cmp::Ordering,
         fmt,
         io::{BufRead, Stdin},
         str::FromStr,
@@ -13,15 +14,18 @@ mod day13 {
 
     use anyhow::{anyhow, Error, Result};
 
+    #[derive(Clone, PartialEq)]
     enum PacketData {
         Integer(u8),
         List(Vec<PacketData>),
     }
 
-    struct Packet {
+    #[derive(Clone, PartialEq)]
+    pub struct Packet {
         data: Vec<PacketData>,
     }
 
+    #[derive(Clone)]
     pub struct DistressSignal {
         packets: Vec<(Packet, Packet)>,
     }
@@ -64,14 +68,12 @@ mod day13 {
         type Err = Error;
 
         fn from_str(str: &str) -> Result<Self> {
-            println!("Parsing {str:?}");
+            println!("{str}");
             if str.starts_with('[') && str.ends_with(']') {
                 let mut stripped = &str[1..str.len() - 1];
                 let mut list = vec![];
 
                 while let Some((lhs, rhs)) = stripped.split_once(',') {
-                    println!("split-once {lhs:?} {rhs:?}");
-
                     list.push(lhs.parse()?);
 
                     if rhs.starts_with('[') && rhs.ends_with(']') {
@@ -87,11 +89,11 @@ mod day13 {
                 }
 
                 Ok(Self::List(list))
-            } else if let Some(int) = str
+            } else if let Ok(int) = str
                 .chars()
-                .next()
-                .and_then(|int| int.to_digit(10))
-                .map(|int| int as u8)
+                .take_while(|char| char.is_ascii_digit())
+                .collect::<String>()
+                .parse()
             {
                 Ok(Self::Integer(int))
             } else {
@@ -139,6 +141,38 @@ mod day13 {
         }
     }
 
+    impl PartialOrd for PacketData {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            match (self, other) {
+                (&Self::Integer(i), &Self::Integer(j)) => i < j,
+                (Self::List(i), Self::List(j)) => {
+                    i.iter().zip(j.iter()).any(|(i, j)| i < j)
+                        || (i.iter().zip(j.iter()).all(|(i, j)| i == j) && i.len() < j.len())
+                }
+                (&Self::Integer(i), _) => &Self::List(vec![Self::Integer(i)]) < other,
+                (_, &Self::Integer(j)) => self < &Self::List(vec![Self::Integer(j)]),
+            }
+            .then_some(Ordering::Less)
+        }
+    }
+
+    impl PartialOrd for Packet {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            (self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .any(|(left, right)| left < right)
+                || (self
+                    .data
+                    .iter()
+                    .zip(other.data.iter())
+                    .all(|(left, right)| left == right)
+                    && self.data.len() < other.data.len()))
+            .then_some(Ordering::Less)
+        }
+    }
+
     impl DistressSignal {
         pub fn from_stdin(stdin: Stdin) -> Result<Self> {
             const PACKET_PAIR_LINE_LEN: u8 = 2;
@@ -183,13 +217,28 @@ mod day13 {
 
             Ok(Self { packets })
         }
+
+        pub fn packets(&self) -> &[(Packet, Packet)] {
+            self.packets.as_slice()
+        }
     }
+}
+
+fn part_one(signal: &DistressSignal) -> usize {
+    signal
+        .packets()
+        .iter()
+        .enumerate()
+        .map(|(idx, packets)| (idx + 1, packets))
+        .filter(|&(_, (i, j))| i < j)
+        .map(|(idx, _)| idx)
+        .sum()
 }
 
 fn main() -> Result<()> {
     let signal = DistressSignal::from_stdin(io::stdin())?;
 
-    println!("{signal:?}");
+    println!("Part one: {}", part_one(&signal));
 
     Ok(())
 }
