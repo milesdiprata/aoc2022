@@ -30,6 +30,48 @@ mod day13 {
         packets: Vec<(Packet, Packet)>,
     }
 
+    fn parse<T>(str: &str) -> Result<Vec<T>>
+    where
+        T: FromStr + FromStr<Err = Error>,
+    {
+        let mut data = vec![];
+
+        let mut data_start = None;
+        let mut list_depth = 0;
+
+        for (idx, char) in str.char_indices() {
+            if char.is_ascii_digit() {
+                if list_depth == 0 && data_start.is_none() {
+                    data_start = Some(idx);
+                }
+            } else if char == ',' {
+                if list_depth == 0 && data_start.is_some() {
+                    data.push(str[data_start.unwrap_or(idx)..idx].parse()?);
+                    data_start = None;
+                }
+            } else if char == '[' {
+                list_depth += 1;
+                if list_depth == 1 && data_start.is_none() {
+                    data_start = Some(idx);
+                }
+            } else if char == ']' {
+                list_depth -= 1;
+
+                if list_depth == 0 {
+                    data.push(str[data_start.unwrap_or(idx)..=idx].parse()?);
+                    data_start = None;
+                }
+            } else {
+            }
+        }
+
+        if let Some(start) = data_start {
+            data.push(str[start..].parse()?);
+        }
+
+        Ok(data)
+    }
+
     impl fmt::Debug for PacketData {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
@@ -68,27 +110,8 @@ mod day13 {
         type Err = Error;
 
         fn from_str(str: &str) -> Result<Self> {
-            println!("{str}");
             if str.starts_with('[') && str.ends_with(']') {
-                let mut stripped = &str[1..str.len() - 1];
-                let mut list = vec![];
-
-                while let Some((lhs, rhs)) = stripped.split_once(',') {
-                    list.push(lhs.parse()?);
-
-                    if rhs.starts_with('[') && rhs.ends_with(']') {
-                        list.push(rhs.parse()?);
-                        stripped = &stripped[lhs.len() + rhs.len() + 1..];
-                    } else {
-                        stripped = rhs;
-                    }
-                }
-
-                if !stripped.is_empty() {
-                    list.push(stripped.parse()?);
-                }
-
-                Ok(Self::List(list))
+                parse(&str[1..str.len() - 1]).map(Self::List)
             } else if let Ok(int) = str
                 .chars()
                 .take_while(|char| char.is_ascii_digit())
@@ -107,34 +130,7 @@ mod day13 {
 
         fn from_str(str: &str) -> Result<Self> {
             if str.starts_with('[') && str.ends_with(']') {
-                let stripped = &str[1..str.len() - 1];
-                let chars = stripped.char_indices();
-
-                let mut data = vec![];
-                let mut stack = 0;
-
-                let mut open_idx = None;
-
-                for (idx, char) in chars {
-                    if char == '[' {
-                        stack += 1;
-                    } else if char == ']' {
-                        stack -= 1;
-                    } else if char == ',' {
-                        continue;
-                    } else {
-                    }
-
-                    if stack == 1 && open_idx.is_none() {
-                        open_idx = Some(idx);
-                    } else if stack == 0 {
-                        data.push(stripped[open_idx.unwrap_or(idx)..=idx].parse()?);
-                        open_idx = None;
-                    } else {
-                    }
-                }
-
-                Ok(Self { data })
+                parse(&str[1..str.len() - 1]).map(|data| Self { data })
             } else {
                 Err(anyhow!("Packet is not a list!"))
             }
@@ -237,6 +233,8 @@ fn part_one(signal: &DistressSignal) -> usize {
 
 fn main() -> Result<()> {
     let signal = DistressSignal::from_stdin(io::stdin())?;
+
+    println!("{signal:?}");
 
     println!("Part one: {}", part_one(&signal));
 
