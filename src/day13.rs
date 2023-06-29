@@ -1,8 +1,8 @@
-use std::io;
+use std::{cmp::Ordering, io};
 
 use anyhow::Result;
 
-use day13::DistressSignal;
+use day13::{DistressSignal, Packet};
 
 mod day13 {
     use std::{
@@ -186,6 +186,16 @@ mod day13 {
         }
     }
 
+    impl Packet {
+        pub fn from_list(list: Vec<u8>) -> Self {
+            Self {
+                data: vec![PacketData::List(
+                    list.into_iter().map(PacketData::Integer).collect(),
+                )],
+            }
+        }
+    }
+
     impl DistressSignal {
         pub fn from_stdin(stdin: Stdin) -> Result<Self> {
             const PACKET_PAIR_LINE_LEN: u8 = 2;
@@ -234,6 +244,10 @@ mod day13 {
         pub fn packets(&self) -> &[(Packet, Packet)] {
             self.packets.as_slice()
         }
+
+        pub fn all_packets(&self) -> impl Iterator<Item = &Packet> {
+            self.packets.iter().flat_map(|(i, j)| [i, j])
+        }
     }
 }
 
@@ -243,15 +257,49 @@ fn part_one(signal: &DistressSignal) -> usize {
         .iter()
         .enumerate()
         .map(|(idx, packets)| (idx + 1, packets))
+        // .inspect(|(idx, (i, j))| println!("{idx}: {}", i < j))
         .filter(|&(_, (i, j))| i < j)
         .map(|(idx, _)| idx)
         .sum()
+}
+
+fn part_two(signal: &DistressSignal) -> usize {
+    let divider_packets = [Packet::from_list(vec![2]), Packet::from_list(vec![6])];
+
+    let mut all_packets = signal
+        .all_packets()
+        .chain(divider_packets.iter())
+        .collect::<Vec<_>>();
+
+    all_packets.sort_by(|&i, &j| i.partial_cmp(j).unwrap_or(Ordering::Greater));
+
+    [
+        all_packets
+            .iter()
+            .copied()
+            .map(Some)
+            .enumerate()
+            .find(|&(_, packet)| packet == divider_packets.first())
+            .map(|(idx, _)| idx + 1)
+            .unwrap_or_default(),
+        all_packets
+            .iter()
+            .copied()
+            .map(Some)
+            .enumerate()
+            .find(|&(_, packet)| packet == divider_packets.last())
+            .map(|(idx, _)| idx + 1)
+            .unwrap_or_default(),
+    ]
+    .iter()
+    .product()
 }
 
 fn main() -> Result<()> {
     let signal = DistressSignal::from_stdin(io::stdin())?;
 
     println!("Part one: {}", part_one(&signal));
+    println!("Part two: {}", part_two(&signal));
 
     Ok(())
 }
