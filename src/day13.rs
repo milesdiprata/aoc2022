@@ -140,32 +140,49 @@ mod day13 {
     impl PartialOrd for PacketData {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
             match (self, other) {
-                (&Self::Integer(i), &Self::Integer(j)) => i < j,
-                (Self::List(i), Self::List(j)) => {
-                    i.iter().zip(j.iter()).any(|(i, j)| i < j)
-                        || (i.iter().zip(j.iter()).all(|(i, j)| i == j) && i.len() < j.len())
+                (PacketData::Integer(left), PacketData::Integer(right)) => match left.cmp(right) {
+                    Ordering::Less => Some(Ordering::Less),
+                    Ordering::Greater => Some(Ordering::Greater),
+                    Ordering::Equal => None,
+                },
+                (PacketData::List(left), PacketData::List(right)) => {
+                    for (left, right) in left.iter().zip(right.iter()) {
+                        match left.partial_cmp(right) {
+                            Some(ordering) => return Some(ordering),
+                            None => continue,
+                        }
+                    }
+
+                    match left.len().cmp(&right.len()) {
+                        Ordering::Less => Some(Ordering::Less),
+                        Ordering::Greater => Some(Ordering::Greater),
+                        Ordering::Equal => None,
+                    }
                 }
-                (&Self::Integer(i), _) => &Self::List(vec![Self::Integer(i)]) < other,
-                (_, &Self::Integer(j)) => self < &Self::List(vec![Self::Integer(j)]),
+                (&PacketData::Integer(left), PacketData::List(_)) => {
+                    Self::List(vec![Self::Integer(left)]).partial_cmp(other)
+                }
+                (PacketData::List(_), &PacketData::Integer(right)) => {
+                    self.partial_cmp(&Self::List(vec![Self::Integer(right)]))
+                }
             }
-            .then_some(Ordering::Less)
         }
     }
 
     impl PartialOrd for Packet {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            (self
-                .data
-                .iter()
-                .zip(other.data.iter())
-                .any(|(left, right)| left < right)
-                || (self
-                    .data
-                    .iter()
-                    .zip(other.data.iter())
-                    .all(|(left, right)| left == right)
-                    && self.data.len() < other.data.len()))
-            .then_some(Ordering::Less)
+            for (left, right) in self.data.iter().zip(other.data.iter()) {
+                match left.partial_cmp(right) {
+                    Some(ordering) => return Some(ordering),
+                    None => continue,
+                }
+            }
+
+            match self.data.len().cmp(&other.data.len()) {
+                Ordering::Less => Some(Ordering::Less),
+                Ordering::Greater => Some(Ordering::Greater),
+                Ordering::Equal => None,
+            }
         }
     }
 
@@ -233,8 +250,6 @@ fn part_one(signal: &DistressSignal) -> usize {
 
 fn main() -> Result<()> {
     let signal = DistressSignal::from_stdin(io::stdin())?;
-
-    println!("{signal:?}");
 
     println!("Part one: {}", part_one(&signal));
 
