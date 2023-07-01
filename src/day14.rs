@@ -6,6 +6,7 @@ use day14::Cave;
 
 mod day14 {
     use std::{
+        collections::HashMap,
         fmt,
         io::{BufRead, Stdin},
         str::FromStr,
@@ -22,18 +23,21 @@ mod day14 {
         Sand,
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Eq, Hash, PartialEq)]
     struct Point {
         x: u16,
         y: u8,
     }
 
+    #[derive(Clone)]
     struct Path {
         coords: Vec<Point>,
     }
 
+    #[derive(Clone)]
     pub struct Cave {
-        grid: Vec<Vec<Tile>>,
+        grid: HashMap<Point, Tile>,
+        y_max: u8,
     }
 
     impl fmt::Debug for Tile {
@@ -67,8 +71,16 @@ mod day14 {
 
     impl fmt::Debug for Cave {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-            self.grid.iter().try_for_each(|row| {
-                row.iter()
+            // self.grid.iter().try_for_each(|row| {
+            //     row.iter()
+            //         .try_for_each(|tile| write!(fmt, "{tile:?}"))
+            //         .and_then(|_| writeln!(fmt))
+            // })
+
+            (0..11).try_for_each(|y| {
+                (488..=512)
+                    .map(|x| Point { x, y })
+                    .map(|point| self.get_with_floor(point).unwrap())
                     .try_for_each(|tile| write!(fmt, "{tile:?}"))
                     .and_then(|_| writeln!(fmt))
             })
@@ -110,36 +122,27 @@ mod day14 {
 
     impl Point {
         fn as_down(&self) -> Option<Self> {
-            if self.y < u8::MAX {
-                Some(Self {
-                    x: self.x,
-                    y: self.y + 1,
-                })
-            } else {
-                None
-            }
+            #[allow(clippy::unnecessary_lazy_evaluations)]
+            (self.y < u8::MAX).then(|| Self {
+                x: self.x,
+                y: self.y + 1,
+            })
         }
 
         fn as_down_left(&self) -> Option<Self> {
-            if self.x as isize - 1 > 0 && self.y < u8::MAX {
-                Some(Self {
-                    x: self.x - 1,
-                    y: self.y + 1,
-                })
-            } else {
-                None
-            }
+            #[allow(clippy::unnecessary_lazy_evaluations)]
+            (self.x as isize - 1 > 0 && self.y < u8::MAX).then(|| Self {
+                x: self.x - 1,
+                y: self.y + 1,
+            })
         }
 
         fn as_down_right(&self) -> Option<Self> {
-            if self.x < u16::MAX && self.y < u8::MAX {
-                Some(Self {
-                    x: self.x + 1,
-                    y: self.y + 1,
-                })
-            } else {
-                None
-            }
+            #[allow(clippy::unnecessary_lazy_evaluations)]
+            (self.x < u16::MAX && self.y < u8::MAX).then(|| Self {
+                x: self.x + 1,
+                y: self.y + 1,
+            })
         }
     }
 
@@ -185,8 +188,10 @@ mod day14 {
 
             let mut cave = Self {
                 grid: (0..=y_max)
-                    .map(|_| (0..=x_max).map(|_| Tile::Air).collect())
+                    .flat_map(|y| (0..=x_max).map(move |x| Point { x, y }))
+                    .map(|point| (point, Tile::Air))
                     .collect(),
+                y_max,
             };
 
             *cave
@@ -241,38 +246,76 @@ mod day14 {
             Some(())
         }
 
-        fn get(&self, point: Point) -> Option<Tile> {
-            self.grid
-                .get(point.y as usize)
-                .and_then(|row| row.get(point.x as usize))
-                .copied()
-        }
+        pub fn drop_sand_with_floor(&mut self) -> Option<()> {
+            if let Tile::Sand = self.get(Self::sand_source())? {
+                return None;
+            }
 
-        fn get_mut(&mut self, point: Point) -> Option<&mut Tile> {
-            self.grid
-                .get_mut(point.y as usize)
-                .and_then(|row| row.get_mut(point.x as usize))
+            let mut sand = Self::sand_source();
+
+            loop {
+                if let Some(Tile::Air) = self.get_with_floor(sand.as_down()?) {
+                    sand = sand.as_down()?;
+                } else if let Some(Tile::Air) = self.get_with_floor(sand.as_down_left()?) {
+                    sand = sand.as_down_left()?;
+                } else if let Some(Tile::Air) = self.get_with_floor(sand.as_down_right()?) {
+                    sand = sand.as_down_right()?;
+                } else {
+                    break;
+                }
+            }
+
+            *self.get_with_floor_mut(sand)? = Tile::Sand;
+
+            Some(())
         }
 
         const fn sand_source() -> Point {
             Point { x: 500, y: 0 }
         }
+
+        fn y_floor(&self) -> u8 {
+            const FLOOR_OFFSET: u8 = 2;
+            FLOOR_OFFSET + self.y_max
+        }
+
+        fn get(&self, point: Point) -> Option<Tile> {
+            self.grid.get(&point).copied()
+        }
+
+        fn get_with_floor(&self, point: Point) -> Option<Tile> {
+            (point.y < self.y_floor()).then(|| self.get(point).unwrap_or(Tile::Air))
+        }
+
+        fn get_mut(&mut self, point: Point) -> Option<&mut Tile> {
+            self.grid.get_mut(&point)
+        }
+
+        fn get_with_floor_mut(&mut self, point: Point) -> Option<&mut Tile> {
+            (point.y < self.y_floor()).then(|| self.grid.entry(point).or_insert(Tile::Air))
+        }
     }
 }
 
-fn part_one(cave: &mut Cave) -> usize {
+fn part_one(mut cave: Cave) -> usize {
     (1..usize::MAX)
         .take_while(|_| cave.drop_sand().is_some())
         .last()
         .unwrap_or_default()
 }
 
+fn part_two(mut cave: Cave) -> usize {
+    (1..usize::MAX)
+        .take_while(|_| cave.drop_sand_with_floor().is_some())
+        .last()
+        .unwrap_or_default()
+}
+
 fn main() -> Result<()> {
-    let mut cave = Cave::from_stdin(io::stdin())?;
+    let cave = Cave::from_stdin(io::stdin())?;
 
-    // println!("{:?}", cave);
-
-    println!("Part one: {}", part_one(&mut cave));
+    println!("Part one: {}", part_one(cave.clone()));
+    println!("Part two: {}", part_two(cave));
 
     Ok(())
 }
