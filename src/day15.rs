@@ -1,245 +1,151 @@
 use std::io;
+use std::io::BufRead;
+use std::io::Stdin;
+use std::ops::RangeInclusive;
+use std::str::FromStr;
 
+use anyhow::anyhow;
+use anyhow::Error;
 use anyhow::Result;
 
-use day15::SubterraneanTunnels;
+struct Sensor {
+    position: Point,
+    beacon: Point,
+}
 
-mod day15 {
-    use std::{
-        collections::{HashMap, HashSet, VecDeque},
-        fmt,
-        io::{BufRead, Stdin},
-        str::FromStr,
-    };
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct Point {
+    x: isize,
+    y: isize,
+}
 
-    use anyhow::{anyhow, Error, Result};
+struct SubterraneanTunnels {
+    sensors: Vec<Sensor>,
+}
 
-    enum Position {
-        Sensor(Point),
-        Beacon,
-        Visited,
+impl FromStr for Point {
+    type Err = Error;
+
+    fn from_str(point: &str) -> Result<Self> {
+        let mut split = point.trim().split(", ");
+
+        let x = split
+            .next()
+            .map(|x| x.split('='))
+            .and_then(|x| x.last())
+            .map(|x| x.parse())
+            .ok_or_else(|| anyhow!("Missing x-coordinate!"))??;
+
+        let y = split
+            .next()
+            .map(|y| y.split('='))
+            .and_then(|y| y.last())
+            .map(|y| y.parse())
+            .ok_or_else(|| anyhow!("Missing y-coordinate!"))??;
+
+        Ok(Self { x, y })
     }
+}
 
-    struct Sensor {
-        location: Point,
-        closest_beacon: Point,
+impl FromStr for Sensor {
+    type Err = Error;
+
+    fn from_str(sensor: &str) -> Result<Self> {
+        let mut split = sensor.trim().split(": ");
+
+        let position = split
+            .next()
+            .map(|position| position.split_at("Sensor at".len()))
+            .map(|(_, position)| position)
+            .map(|position| position.parse())
+            .ok_or_else(|| anyhow!("Missing sensor position!"))??;
+
+        let beacon = split
+            .next()
+            .map(|beacon| beacon.split_at("closest beacon is at".len()))
+            .map(|(_, beacon)| beacon)
+            .map(|beacon| beacon.parse())
+            .ok_or_else(|| anyhow!("Missing closest beacon location!"))??;
+
+        Ok(Self { position, beacon })
     }
+}
 
-    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-    pub struct Point {
-        x: isize,
-        y: isize,
+impl Point {
+    fn dist(&self, other: &Self) -> isize {
+        (self.x - other.x).abs() + (self.y - other.y).abs()
     }
+}
 
-    pub struct SubterraneanTunnels {
-        grid: HashMap<Point, Position>,
-    }
-
-    impl fmt::Debug for Position {
-        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Position::Sensor(_) => write!(fmt, "S"),
-                Position::Beacon => write!(fmt, "B"),
-                Position::Visited => write!(fmt, "#"),
-            }
-        }
-    }
-
-    impl fmt::Debug for SubterraneanTunnels {
-        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-            (-2..=22).try_for_each(|y| {
-                (-2..=25)
-                    .map(|x| Point { x, y })
-                    .map(|point| self.grid.get(&point))
-                    .try_for_each(|position| match position {
-                        Some(position) => write!(fmt, "{position:?}"),
-                        None => write!(fmt, "."),
-                    })
-                    .and_then(|_| writeln!(fmt))
+impl SubterraneanTunnels {
+    fn from_stdin(stdin: Stdin) -> Result<Self> {
+        let sensors = stdin
+            .lock()
+            .lines()
+            .take_while(|line| {
+                line.as_ref()
+                    .map(|line| line.is_empty())
+                    .map(|empty| !empty)
+                    .unwrap_or_default()
             })
-        }
+            .map(|line| line.map_err(|err| anyhow!(err)))
+            .collect::<Result<Vec<_>>>()?
+            .iter()
+            .map(String::as_str)
+            .map(Sensor::from_str)
+            .collect::<Result<_>>()?;
+
+        Ok(Self { sensors })
     }
 
-    impl FromStr for Point {
-        type Err = Error;
-
-        fn from_str(point: &str) -> Result<Self> {
-            let mut split = point.trim().split(", ");
-
-            let x = split
-                .next()
-                .map(|x| x.split('='))
-                .and_then(|x| x.last())
-                .map(|x| x.parse())
-                .ok_or_else(|| anyhow!("Missing x-coordinate!"))??;
-
-            let y = split
-                .next()
-                .map(|y| y.split('='))
-                .and_then(|y| y.last())
-                .map(|y| y.parse())
-                .ok_or_else(|| anyhow!("Missing y-coordinate!"))??;
-
-            Ok(Self { x, y })
-        }
+    fn is_beacon(&self, position: &Point) -> bool {
+        self.sensors
+            .iter()
+            .map(|sensor| &sensor.beacon)
+            .any(|beacon| beacon == position)
     }
 
-    impl FromStr for Sensor {
-        type Err = Error;
-
-        fn from_str(sensor: &str) -> Result<Self> {
-            let mut split = sensor.trim().split(": ");
-
-            let location = split
-                .next()
-                .map(|location| location.split_at("Sensor at".len()))
-                .map(|(_, location)| location)
-                .map(|location| location.parse())
-                .ok_or_else(|| anyhow!("Missing sensor location!"))??;
-
-            let closest_beacon = split
-                .next()
-                .map(|beacon| beacon.split_at("closest beacon is at".len()))
-                .map(|(_, beacon)| beacon)
-                .map(|beacon| beacon.parse())
-                .ok_or_else(|| anyhow!("Missing closest beacon location!"))??;
-
-            Ok(Self {
-                location,
-                closest_beacon,
-            })
-        }
+    fn is_within_dist(&self, position: &Point) -> bool {
+        self.sensors
+            .iter()
+            .map(|sensor| (&sensor.position, &sensor.beacon))
+            .any(|(sensor, beacon)| sensor.dist(position) <= sensor.dist(beacon))
     }
 
-    impl Sensor {
-        fn into_positions(self) -> impl Iterator<Item = (Point, Position)> {
-            [
-                (self.location, Position::Sensor(self.closest_beacon.clone())),
-                (self.closest_beacon, Position::Beacon),
-            ]
-            .into_iter()
-        }
+    fn find_x_range(&self, y: isize) -> RangeInclusive<isize> {
+        let mut x_min = isize::MAX;
+        let mut x_max = isize::MIN;
+
+        self.sensors
+            .iter()
+            .map(|sensor| (&sensor.position, &sensor.beacon))
+            .for_each(|(sensor, beacon)| {
+                let dist = sensor.dist(beacon);
+
+                if (y - beacon.y).abs() <= dist {
+                    let middle = sensor.x;
+                    let start = middle - dist;
+                    let end = middle + dist;
+
+                    x_min = x_min.min(start);
+                    x_max = x_max.max(end);
+                }
+            });
+
+        x_min..=x_max
     }
 
-    impl Point {
-        fn as_up(&self) -> Self {
-            Self {
-                x: self.x,
-                y: self.y - 1,
-            }
-        }
-
-        fn as_down(&self) -> Self {
-            Self {
-                x: self.x,
-                y: self.y + 1,
-            }
-        }
-
-        fn as_left(&self) -> Self {
-            Self {
-                x: self.x - 1,
-                y: self.y,
-            }
-        }
-
-        fn as_right(&self) -> Self {
-            Self {
-                x: self.x + 1,
-                y: self.y,
-            }
-        }
-
-        fn adjacencies(&self) -> impl Iterator<Item = Self> {
-            [
-                self.as_up(),
-                self.as_down(),
-                self.as_left(),
-                self.as_right(),
-            ]
-            .into_iter()
-        }
-
-        fn manhattan_distance(&self, other: &Self) -> isize {
-            (self.x - other.x).abs() + (self.y - other.y).abs()
-        }
-    }
-
-    impl SubterraneanTunnels {
-        pub fn from_stdin(stdin: Stdin) -> Result<Self> {
-            let grid = stdin
-                .lock()
-                .lines()
-                .take_while(|line| {
-                    line.as_ref()
-                        .map(|line| line.is_empty())
-                        .map(|empty| !empty)
-                        .unwrap_or_default()
-                })
-                .map(|line| line.map_err(|err| anyhow!(err)))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .map(|line| line.parse::<Sensor>())
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flat_map(|sensor| sensor.into_positions())
-                .collect();
-
-            Ok(Self { grid })
-        }
-
-        pub fn find_beaconless_locations(&self, row_y: isize) -> impl Iterator<Item = Point> + '_ {
-            self.grid
-                .iter()
-                .filter_map(|(sensor, position)| match position {
-                    Position::Sensor(beacon) => Some((sensor, beacon)),
-                    _ => None,
-                })
-                .map(|(sensor, beacon)| (sensor, sensor.manhattan_distance(beacon)))
-                .filter(|&(sensor, distance)| (sensor.y - row_y).abs() <= distance)
-                .flat_map(|(sensor, distance)| self.bfs_root(sensor.clone(), distance, row_y))
-                .collect::<HashSet<_>>()
-                .into_iter()
-        }
-
-        fn bfs_root(
-            &self,
-            start: Point,
-            distance: isize,
-            row_y: isize,
-        ) -> impl Iterator<Item = Point> + '_ {
-            let mut frontier = VecDeque::new();
-            let mut visited = HashSet::new();
-
-            frontier.push_back(start.clone());
-            visited.insert(start.clone());
-
-            while let Some(i) = frontier.pop_front() {
-                i.adjacencies()
-                    .filter(|j| (j.y - row_y).abs() <= distance)
-                    .filter(|j| start.manhattan_distance(j) <= distance)
-                    .filter(|j| !visited.contains(j))
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .for_each(|j| {
-                        frontier.push_back(j.clone());
-                        visited.insert(j);
-                    });
-            }
-
-            visited
-                .into_iter()
-                .filter(|location| self.grid.get(location).is_none())
-                .filter(move |location| location.y == row_y)
-        }
+    fn find_beaconless_locations(&self, y: isize) -> impl Iterator<Item = Point> + '_ {
+        self.find_x_range(y)
+            .map(move |x| Point { x, y })
+            .filter(|position| !self.is_beacon(position))
+            .filter(|position| self.is_within_dist(position))
     }
 }
 
 fn part_one(tunnels: &SubterraneanTunnels) -> usize {
-    // const ROW_Y: isize = 2_000_000;
-    const ROW_Y: isize = 10;
-
-    tunnels.find_beaconless_locations(ROW_Y).count()
+    const Y_TARGET: isize = 2_000_000;
+    tunnels.find_beaconless_locations(Y_TARGET).count()
 }
 
 fn main() -> Result<()> {
